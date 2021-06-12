@@ -73,13 +73,23 @@
 
           const midiDeviceIndex = new FormData(midiDeviceForm).get("midi-device-select");
           const notice = document.createElement("div");
-          notice.innerHTML = '<form><select name="wave-form-select" id="wave-form-select" required><option selected value="sine">Sine</option><option value="square">Square</option><option value="sawtooth">Sawtooth</option><option value="triangle">Triangle</option></select></form><p>Start Playing</p>';
+          notice.textContent = 'Start Playing';
           midiDeviceForm.replaceWith(notice);
 
           midiAccess.inputs.get(midiDeviceIndex).onmidimessage = getMIDIMessage;
 
-          const waveFormSelect = document.getElementById("wave-form-select");
-          waveFormSelect.addEventListener("change", (e) => type = e.target.value);
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+          for (let i = 0; i < 128; i++) {
+            let oscillator = audioCtx.createOscillator();
+            let gainNode = audioCtx.createGain();
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.setValueAtTime((440 / 32) * (2 ** ((i - 9) / 12)), audioCtx.currentTime);
+            oscillator.gainNode = gainNode;
+            oscillator.start();
+
+            oscillators.push(oscillator);
+          }
         });
       }
 
@@ -106,30 +116,16 @@
         }
       }
 
+      let audioCtx;
       let oscillators = [];
-      let type = "sine";
 
       function noteOn(note, velocity) {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        gainNode.gain.setValueAtTime(velocity / 127, audioCtx.currentTime);
-        oscillator.type = type;
-        oscillator.frequency.setValueAtTime((440 / 32) * (2 ** ((note - 9) / 12)), audioCtx.currentTime);
-        oscillator.note = note;
-        oscillator.start();
-        oscillators.push(oscillator);
+        oscillators[note].gainNode.gain.setValueAtTime(velocity / 127, audioCtx.currentTime);
+        oscillators[note].connect(oscillators[note].gainNode);
       }
 
       function noteOff(note) {
-        const oscillator = oscillators.find(function (oscillator) {
-          return oscillator.note === note;
-        });
-
-        oscillator.stop();
-        oscillators.splice(oscillators.indexOf(oscillator), 1);
+        oscillators[note].disconnect(oscillators[note].gainNode);
       }
     } else {
       const browserSupportNotice = document.createElement("p");
