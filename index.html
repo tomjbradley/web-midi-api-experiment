@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Web MIDI</title>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+  <style>
+    body {
+      background-color: #fff;
+      color: #111;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+
+    form {
+      max-width: 560px;
+    }
+
+    label,
+    select,
+    button {
+      display: block;
+      width: 100%;
+      font-size: 18px;
+    }
+
+    label {
+      font-weight: 700;
+    }
+
+    select {
+      font-family: inherit;
+    }
+
+    input,
+    select {
+      margin-bottom: 15px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <form id="midi-device-form">
+    <label for="midi-device-select">MIDI Device</label>
+    <select name="midi-device-select" id="midi-device-select" required>
+      <option selected disabled hidden value> -- select a midi device -- </option>
+    </select>
+    <button type="submit">Submit</button>
+  </form>
+  <script>
+    const midiDeviceForm = document.getElementById("midi-device-form");
+    const midiDeviceSelect = document.getElementById("midi-device-select");
+
+    if (navigator.requestMIDIAccess) {
+      navigator.requestMIDIAccess()
+        .then(onMIDISuccess, onMIDIFailure);
+
+      function onMIDISuccess(midiAccess) {
+        for (let [index, input] of midiAccess.inputs.entries()) {
+          let midiDevice = document.createElement("option");
+          midiDevice.setAttribute("value", index);
+          midiDevice.textContent = input.name;
+          midiDeviceSelect.appendChild(midiDevice);
+        }
+
+        midiDeviceForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const midiDeviceIndex = new FormData(midiDeviceForm).get("midi-device-select");
+          const notice = document.createElement("div");
+          notice.innerHTML = '<form><select name="wave-form-select" id="wave-form-select" required><option selected value="sine">Sine</option><option value="square">Square</option><option value="sawtooth">Sawtooth</option><option value="triangle">Triangle</option></select></form><p>Start Playing</p>';
+          midiDeviceForm.replaceWith(notice);
+
+          midiAccess.inputs.get(midiDeviceIndex).onmidimessage = getMIDIMessage;
+
+          const waveFormSelect = document.getElementById("wave-form-select");
+          waveFormSelect.addEventListener("change", (e) => type = e.target.value);
+        });
+      }
+
+      function onMIDIFailure() {
+        console.log('Could not access your MIDI devices.');
+      }
+
+      function getMIDIMessage(message) {
+        const command = message.data[0];
+        const note = message.data[1];
+        const velocity = (message.data.length > 2) ? message.data[2] : 0;
+
+        switch (command) {
+          case 144:
+            if (velocity > 0) {
+              noteOn(note, velocity);
+            } else {
+              noteOff(note);
+            }
+            break;
+          case 128:
+            noteOff(note);
+            break;
+        }
+      }
+
+      let oscillators = [];
+      let type = "sine";
+
+      function noteOn(note, velocity) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        gainNode.gain.setValueAtTime(velocity / 127, audioCtx.currentTime);
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime((440 / 32) * (2 ** ((note - 9) / 12)), audioCtx.currentTime);
+        oscillator.note = note;
+        oscillator.start();
+        oscillators.push(oscillator);
+      }
+
+      function noteOff(note) {
+        const oscillator = oscillators.find(function (oscillator) {
+          return oscillator.note === note;
+        });
+
+        oscillator.stop();
+        oscillators.splice(oscillators.indexOf(oscillator), 1);
+      }
+    } else {
+      const browserSupportNotice = document.createElement("p");
+      browserSupportNotice.innerHTML = 'Your browser does not support Web MIDI see a list of supported browsers at <a href="https://caniuse.com/?search=Web%20MIDI%20API">https://caniuse.com/?search=Web%20MIDI%20API'
+      midiDeviceForm.replaceWith(browserSupportNotice);
+    }
+  </script>
+</body>
+
+</html>
